@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and set your values.
+# Your VPC must have two private subnets with NAT gateways; no public subnets / no IGW required for Bedrock.
+
+vpc_id             = "vpc-xxxxxxxxx"
+private_subnet_ids = ["subnet-aaaaaaaa", "subnet-bbbbbbbb"]
+private_route_table_ids = ["rtb-xxxxxxxx", "rtb-yyyyyyyy"]
+vpc_cidr           = "10.0.0.0/16"
+
+aws_region  = "us-east-1"
+environment = "prod"
+name_prefix = "doc-summarizer"
+
+enable_s3_gateway_endpoint = true
+enable_bedrock_agent_endpoints = false
+create_kms_key = false
+
+# Who can reach the summarizer app (e.g. internal ALB security group or VPN CIDRs)
+app_ingress_cidrs          = []   # e.g. ["10.1.0.0/16"]
+app_ingress_security_groups = []   # e.g. ["sg-xxxxxxxx"]
+
+tags = {
+  Project = "DocumentSummarizer"
+  Team    = "Platform"
+}
