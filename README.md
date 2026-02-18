@@ -6,15 +6,15 @@ Secure, compliant document summarization using **Amazon Bedrock**, designed for 
 
 | Part | Purpose |
 |------|--------|
-| **Terraform** (`terraform/`) | VPC endpoints for Bedrock, S3, and Textract; IAM role; optional app security group and KMS. Run this first so the app can call Bedrock, S3, and Textract over PrivateLink. |
-| **Python app** (`src/`) | Summarizes documents: plain text, **PDF** (Amazon Textract), and **Word .docx** (python-docx). File path or S3 URI. |
+| **Terraform** (`terraform/`) | VPC endpoints for Bedrock, S3, Textract, and Comprehend; IAM role; optional app security group and KMS. Run this first so the app can call all services over PrivateLink. |
+| **Python app** (`src/`) | Summarizes documents: plain text, **PDF** (Textract), **Word .docx** (python-docx). **PII/sensitive**: optional redaction or block via Amazon Comprehend before sending to Bedrock. |
 
 ## Using the summarization (how it fits together)
 
 1. **Deploy the Terraform** in your account (same VPC as where the app will run).  
    See [terraform/README.md](terraform/README.md). You get:
-   - Bedrock, S3, and Textract VPC endpoints
-   - IAM role for the summarizer (Bedrock, S3, Textract)
+   - Bedrock, S3, Textract, and Comprehend VPC endpoints
+   - IAM role for the summarizer (Bedrock, S3, Textract, Comprehend)
    - Optional security group for the app
 
 2. **Run the summarizer app** with that role, in the same VPC (so traffic goes through the VPC endpoints).  
@@ -76,7 +76,7 @@ summary = summarize_document("s3://my-bucket/documents/report.txt")
 summary = summarize_document("s3://my-bucket/documents/report.pdf")
 ```
 
-Optional kwargs: `model_id`, `region_name`, `max_tokens`, `temperature`.
+Optional kwargs: `model_id`, `region_name`, `max_tokens`, `temperature`, `pii_mode`, `pii_language_code`, `pii_mask`.
 
 ### Option C — Run as Lambda or ECS
 
@@ -101,3 +101,53 @@ In all cases, **actually using the summarization** = running this Python code (C
 - **Plain text** — read as UTF-8: `.txt`, `.md`, `.json`, `.html`, `.csv`, `.yaml`, source code, etc.
 
 So: **PDF and Word are supported in-app**; PDF uses AWS (Textract), Word uses python-docx. No separate extraction step—just pass the file path or S3 URI to the CLI or `summarize_document()`.
+
+---
+
+## PII and sensitive documents
+
+The app can handle documents that may contain **personally identifiable information (PII)** or other sensitive data so that raw PII is not sent to Bedrock.
+
+- **Amazon Comprehend** is used to detect PII (names, emails, phone numbers, SSN, etc.) in the extracted text. Terraform adds a Comprehend VPC endpoint and IAM permission for `DetectPiiEntities`.
+
+### Options
+
+| Option | Behavior |
+|--------|----------|
+| **`pii_mode="redact"`** (default) | Comprehend detects PII; detected spans are replaced with a mask (e.g. `[REDACTED]`) before the text is sent to Bedrock. The summary is based on the redacted document. |
+| **`pii_mode="block"`** | If Comprehend finds any PII, the request is refused and `PIIDetectedError` is raised. No call to Bedrock. Use when you must not process documents that contain PII. |
+| **`pii_mode="off"`** | No PII check or redaction; document is sent to Bedrock as-is. Use only when the pipeline is already PII-free or out of scope. |
+
+### CLI
+
+```bash
+# Default: redact PII before summarization
+python -m src.cli document.pdf
+
+# Refuse to summarize if PII is detected (exit 1)
+python -m src.cli document.pdf --pii block
+
+# Disable PII handling
+python -m src.cli document.pdf --pii off
+```
+
+### API
+
+```python
+from src.summarizer import summarize_document, summarize_text, PIIDetectedError
+
+# Redact PII (default), then summarize
+summary = summarize_document("report.pdf", pii_mode="redact", pii_mask="[REDACTED]")
+
+# Block if PII present
+try:
+    summary = summarize_document("report.pdf", pii_mode="block")
+except PIIDetectedError:
+    # Handle: log, return 403, etc.
+    pass
+
+# Optional: language for Comprehend (default "en")
+summary = summarize_text(text, pii_mode="redact", pii_language_code="es")
+```
+
+Long documents are chunked for Comprehend (5 KB limit per request); redaction is applied across the full text before summarization.

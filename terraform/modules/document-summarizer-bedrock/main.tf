@@ -132,6 +132,21 @@ resource "aws_vpc_endpoint" "textract" {
 }
 
 # ------------------------------------------------------------------------------
+# VPC Interface Endpoint for Amazon Comprehend (PII detection / redaction)
+# ------------------------------------------------------------------------------
+
+resource "aws_vpc_endpoint" "comprehend" {
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.comprehend"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.private_subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(local.common_tags, { Name = "${local.name}-comprehend" })
+}
+
+# ------------------------------------------------------------------------------
 # S3 Gateway Endpoint (keeps S3 traffic in AWS; no NAT required)
 # ------------------------------------------------------------------------------
 
@@ -194,7 +209,7 @@ data "aws_region" "current" {}
 resource "aws_iam_role" "summarizer" {
   name_prefix        = "${var.name_prefix}-${var.environment}-"
   assume_role_policy = data.aws_iam_policy_document.summarizer_assume.json
-  description        = "Role for document summarizer app (Bedrock, S3, Textract)."
+  description        = "Role for document summarizer app (Bedrock, S3, Textract, Comprehend)."
 
   tags = local.common_tags
 }
@@ -254,6 +269,13 @@ data "aws_iam_policy_document" "summarizer_bedrock_s3" {
       "textract:StartDocumentTextDetection",
       "textract:GetDocumentTextDetection"
     ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "ComprehendPII"
+    effect    = "Allow"
+    actions   = ["comprehend:DetectPiiEntities"]
     resources = ["*"]
   }
 

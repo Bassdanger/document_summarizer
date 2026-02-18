@@ -25,7 +25,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from src.summarizer.summarize import summarize_text, summarize_document
+from src.summarizer.summarize import PIIDetectedError, summarize_text, summarize_document
 
 
 def main():
@@ -57,23 +57,35 @@ def main():
         default=None,
         help="Write summary to file (default: stdout)",
     )
+    parser.add_argument(
+        "--pii",
+        choices=["redact", "block", "off"],
+        default="redact",
+        help="PII handling: redact (mask before Bedrock), block (refuse if PII), off (default: redact)",
+    )
     args = parser.parse_args()
 
-    if args.source == "-":
-        text = sys.stdin.read()
-        summary = summarize_text(
-            text,
-            model_id=args.model,
-            region_name=args.region,
-            max_tokens=args.max_tokens,
-        )
-    else:
-        summary = summarize_document(
-            args.source,
-            model_id=args.model,
-            region_name=args.region,
-            max_tokens=args.max_tokens,
-        )
+    try:
+        if args.source == "-":
+            text = sys.stdin.read()
+            summary = summarize_text(
+                text,
+                model_id=args.model,
+                region_name=args.region,
+                max_tokens=args.max_tokens,
+                pii_mode=args.pii,
+            )
+        else:
+            summary = summarize_document(
+                args.source,
+                model_id=args.model,
+                region_name=args.region,
+                max_tokens=args.max_tokens,
+                pii_mode=args.pii,
+            )
+    except PIIDetectedError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     if args.output:
         Path(args.output).write_text(summary, encoding="utf-8")

@@ -27,6 +27,11 @@ output "textract_endpoint_id" {
   value       = aws_vpc_endpoint.textract.id
 }
 
+output "comprehend_endpoint_id" {
+  description = "ID of the Comprehend VPC interface endpoint (PII detection)."
+  value       = aws_vpc_endpoint.comprehend.id
+}
+
 # ------------------------------------------------------------------------------
 # Security groups
 # ------------------------------------------------------------------------------
