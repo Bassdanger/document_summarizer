@@ -4,7 +4,7 @@ Terraform module to deploy a **secure, compliant** document summarizer stack usi
 
 ## Features
 
-- **Private-only networking**: Uses VPC interface endpoints for Bedrock (and optional S3 gateway endpoint) so no IGW or NAT is required for Bedrock/S3 traffic.
+- **Private-only networking**: Uses VPC interface endpoints for Bedrock and Textract (and optional S3 gateway endpoint) so no IGW or NAT is required for Bedrock, Textract, or S3 traffic.
 - **Compliance-friendly**: Optional restricted VPC endpoint policy (InvokeModel only), optional KMS key, least-privilege IAM role.
 - **Team-ready**: Parameterized for different environments and naming; optional app security group and route table association for S3.
 

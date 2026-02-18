@@ -117,6 +117,21 @@ resource "aws_vpc_endpoint" "bedrock_agent_runtime" {
 }
 
 # ------------------------------------------------------------------------------
+# VPC Interface Endpoint for Amazon Textract (PDF text extraction)
+# ------------------------------------------------------------------------------
+
+resource "aws_vpc_endpoint" "textract" {
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.textract"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.private_subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(local.common_tags, { Name = "${local.name}-textract" })
+}
+
+# ------------------------------------------------------------------------------
 # S3 Gateway Endpoint (keeps S3 traffic in AWS; no NAT required)
 # ------------------------------------------------------------------------------
 
@@ -179,7 +194,7 @@ data "aws_region" "current" {}
 resource "aws_iam_role" "summarizer" {
   name_prefix        = "${var.name_prefix}-${var.environment}-"
   assume_role_policy = data.aws_iam_policy_document.summarizer_assume.json
-  description        = "Role for document summarizer app (Bedrock + S3)."
+  description        = "Role for document summarizer app (Bedrock, S3, Textract)."
 
   tags = local.common_tags
 }
@@ -228,6 +243,17 @@ data "aws_iam_policy_document" "summarizer_bedrock_s3" {
     sid       = "S3Documents"
     effect    = "Allow"
     actions   = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "TextractPDF"
+    effect    = "Allow"
+    actions   = [
+      "textract:DetectDocumentText",
+      "textract:StartDocumentTextDetection",
+      "textract:GetDocumentTextDetection"
+    ]
     resources = ["*"]
   }
 

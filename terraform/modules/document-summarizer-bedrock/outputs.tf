@@ -22,6 +22,11 @@ output "s3_gateway_endpoint_id" {
   value       = try(aws_vpc_endpoint.s3[0].id, null)
 }
 
+output "textract_endpoint_id" {
+  description = "ID of the Textract VPC interface endpoint (PDF extraction)."
+  value       = aws_vpc_endpoint.textract.id
+}
+
 # ------------------------------------------------------------------------------
 # Security groups
 # ------------------------------------------------------------------------------
