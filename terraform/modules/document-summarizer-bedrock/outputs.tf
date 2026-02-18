@@ -32,6 +32,11 @@ output "comprehend_endpoint_id" {
   value       = aws_vpc_endpoint.comprehend.id
 }
 
+output "logs_endpoint_id" {
+  description = "ID of the CloudWatch Logs VPC interface endpoint (if created)."
+  value       = try(aws_vpc_endpoint.logs[0].id, null)
+}
+
 # ------------------------------------------------------------------------------
 # Security groups
 # ------------------------------------------------------------------------------
@@ -58,6 +63,20 @@ output "summarizer_role_arn" {
 output "summarizer_role_name" {
   description = "Name of the IAM role for the document summarizer app."
   value       = aws_iam_role.summarizer.name
+}
+
+# ------------------------------------------------------------------------------
+# CloudWatch Logs
+# ------------------------------------------------------------------------------
+
+output "log_group_name" {
+  description = "Name of the CloudWatch log group for the summarizer app (set DOCUMENT_SUMMARIZER_LOG_GROUP for the app)."
+  value       = try(aws_cloudwatch_log_group.summarizer[0].name, null)
+}
+
+output "log_group_arn" {
+  description = "ARN of the CloudWatch log group."
+  value       = try(aws_cloudwatch_log_group.summarizer[0].arn, null)
 }
 
 # ------------------------------------------------------------------------------

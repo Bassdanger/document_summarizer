@@ -6,15 +6,15 @@ Secure, compliant document summarization using **Amazon Bedrock**, designed for 
 
 | Part | Purpose |
 |------|--------|
-| **Terraform** (`terraform/`) | VPC endpoints for Bedrock, S3, Textract, and Comprehend; IAM role; optional app security group and KMS. Run this first so the app can call all services over PrivateLink. |
-| **Python app** (`src/`) | Summarizes documents: plain text, **PDF** (Textract), **Word .docx** (python-docx). **PII/sensitive**: optional redaction or block via Amazon Comprehend before sending to Bedrock. |
+| **Terraform** (`terraform/`) | VPC endpoints (Bedrock, S3, Textract, Comprehend, optional Logs); IAM role; **CloudWatch log group** for compliance; optional app security group and KMS. |
+| **Python app** (`src/`) | Summarizes documents: plain text, **PDF** (Textract), **Word .docx** (python-docx). PII redaction/block via Comprehend. **Structured audit logging** (no PII) to stdout for CloudWatch. |
 
 ## Using the summarization (how it fits together)
 
 1. **Deploy the Terraform** in your account (same VPC as where the app will run).  
    See [terraform/README.md](terraform/README.md). You get:
-   - Bedrock, S3, Textract, and Comprehend VPC endpoints
-   - IAM role for the summarizer (Bedrock, S3, Textract, Comprehend)
+   - Bedrock, S3, Textract, Comprehend (and optional CloudWatch Logs) VPC endpoints
+   - IAM role for the summarizer and a **CloudWatch log group** (retention configurable)
    - Optional security group for the app
 
 2. **Run the summarizer app** with that role, in the same VPC (so traffic goes through the VPC endpoints).  
@@ -151,3 +151,13 @@ summary = summarize_text(text, pii_mode="redact", pii_language_code="es")
 ```
 
 Long documents are chunked for Comprehend (5 KB limit per request); redaction is applied across the full text before summarization.
+
+---
+
+## Compliance and audit logging
+
+- **CloudWatch log group**: Terraform creates a log group (`/document-summarizer/<name>`) with configurable retention (default 90 days) and optional KMS encryption. The summarizer IAM role can write only to this log group. Use output **`log_group_name`** when configuring Lambda or ECS so application logs go to this group.
+- **Logs VPC endpoint**: Optional CloudWatch Logs interface endpoint keeps log traffic private (no NAT). Enable with `enable_logs_vpc_endpoint = true` (default).
+- **Structured audit events**: The app logs JSON audit events (no PII or document content): `summarize_success`, `summarize_blocked` (PII), `summarize_error` with `action`, `source_type`, `pii_mode`, `duration_ms`, `status`, `error_type`. When run in Lambda/ECS, stdout/stderr is captured by the platform and sent to CloudWatch.
+
+See [CODE_REVIEW.md](CODE_REVIEW.md) for the full code review and compliance-related changes.

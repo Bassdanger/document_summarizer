@@ -17,6 +17,7 @@ role, Bedrock and S3 are reached via VPC endpoints automatically.
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -25,6 +26,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
+from src.summarizer.log_config import configure_logging
 from src.summarizer.summarize import PIIDetectedError, summarize_text, summarize_document
 
 
@@ -64,6 +66,7 @@ def main():
         help="PII handling: redact (mask before Bedrock), block (refuse if PII), off (default: redact)",
     )
     args = parser.parse_args()
+    configure_logging()
 
     try:
         if args.source == "-":
@@ -84,6 +87,10 @@ def main():
                 pii_mode=args.pii,
             )
     except PIIDetectedError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        logging.exception("Summarization failed")
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 

@@ -283,7 +283,7 @@ data "aws_iam_policy_document" "summarizer_bedrock_s3" {
     sid       = "CloudWatchLogs"
     effect    = "Allow"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-    resources = ["*"]
+    resources = var.create_cloudwatch_log_group ? ["${aws_cloudwatch_log_group.summarizer[0].arn}:*"] : ["*"]
   }
 }
 
@@ -305,6 +305,37 @@ data "aws_iam_policy_document" "summarizer_kms" {
     actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
     resources = [aws_kms_key.summarizer[0].arn]
   }
+}
+
+# ------------------------------------------------------------------------------
+# CloudWatch Log group (compliance / audit)
+# ------------------------------------------------------------------------------
+
+resource "aws_cloudwatch_log_group" "summarizer" {
+  count = var.create_cloudwatch_log_group ? 1 : 0
+
+  name              = "/document-summarizer/${local.name}"
+  retention_in_days = var.log_group_retention_days > 0 ? var.log_group_retention_days : null
+  kms_key_id        = var.log_group_kms_key_id
+
+  tags = merge(local.common_tags, { Name = "${local.name}-logs" })
+}
+
+# ------------------------------------------------------------------------------
+# VPC Interface Endpoint for CloudWatch Logs (optional; keeps logs private)
+# ------------------------------------------------------------------------------
+
+resource "aws_vpc_endpoint" "logs" {
+  count = var.create_cloudwatch_log_group && var.enable_logs_vpc_endpoint ? 1 : 0
+
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.logs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.private_subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(local.common_tags, { Name = "${local.name}-logs" })
 }
 
 # ------------------------------------------------------------------------------

@@ -99,6 +99,34 @@ variable "app_ingress_ports" {
 }
 
 # ------------------------------------------------------------------------------
+# CloudWatch Logs (compliance / audit)
+# ------------------------------------------------------------------------------
+
+variable "create_cloudwatch_log_group" {
+  description = "Create a CloudWatch log group for the summarizer app (audit and compliance logging)."
+  type        = bool
+  default     = true
+}
+
+variable "log_group_retention_days" {
+  description = "Retention in days for the summarizer log group (0 = never expire)."
+  type        = number
+  default     = 90
+}
+
+variable "log_group_kms_key_id" {
+  description = "Optional KMS key ID/ARN to encrypt the log group. Omit for default encryption."
+  type        = string
+  default     = null
+}
+
+variable "enable_logs_vpc_endpoint" {
+  description = "Create CloudWatch Logs VPC endpoint so logs stay private (no NAT)."
+  type        = bool
+  default     = true
+}
+
+# ------------------------------------------------------------------------------
 # Optional: KMS for encryption (compliance)
 # ------------------------------------------------------------------------------
 

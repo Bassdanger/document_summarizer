@@ -17,3 +17,7 @@ output "s3_gateway_endpoint_id" {
 output "kms_key_arn" {
   value = module.document_summarizer_bedrock.kms_key_arn
 }
+
+output "log_group_name" {
+  value = module.document_summarizer_bedrock.log_group_name
+}

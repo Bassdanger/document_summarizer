@@ -86,9 +86,11 @@ def redact_pii(
                 start = char_offset + ent["BeginOffset"]
                 end = char_offset + ent["EndOffset"]
                 redact_ranges.append((start, end))
-        except Exception:
-            # On Comprehend failure, don't redact (or could treat whole chunk as redact - safer to not send)
-            pass
+        except Exception as e:
+            # Fail closed: do not send potentially unredacted PII to Bedrock
+            raise RuntimeError(
+                "PII redaction failed (Comprehend error); document not sent to Bedrock."
+            ) from e
     # Sort by start and merge overlapping/adjacent ranges.
     redact_ranges.sort(key=lambda r: r[0])
     merged: list[tuple[int, int]] = []

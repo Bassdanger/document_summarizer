@@ -9,18 +9,26 @@ Supports: plain text, PDF (via Amazon Textract), and Word .docx (via python-docx
 
 from __future__ import annotations
 
+import time
 from typing import Optional
 
 import boto3
+
+from .extract import extract_text_for_summary
+from .log_config import audit_log
+from .pii import contains_pii, redact_pii
+
+# Valid values for pii_mode (compliance logging and validation)
+PII_MODE_REDACT = "redact"
+PII_MODE_BLOCK = "block"
+PII_MODE_OFF = "off"
+PII_MODES = (PII_MODE_REDACT, PII_MODE_BLOCK, PII_MODE_OFF)
 
 
 class PIIDetectedError(Exception):
     """Raised when pii_mode='block' and the document contains detected PII."""
 
     pass
-
-from .extract import extract_text_for_summary
-from .pii import contains_pii, redact_pii
 
 
 # Default model; override with BEDROCK_MODEL_ID env or parameter.
@@ -38,9 +46,10 @@ def summarize_text(
     region_name: Optional[str] = None,
     max_tokens: int = 1024,
     temperature: float = 0.3,
-    pii_mode: str = "redact",
+    pii_mode: str = PII_MODE_REDACT,
     pii_language_code: str = "en",
     pii_mask: str = "[REDACTED]",
+    _audit_source_type: str = "inline",
 ) -> str:
     """
     Summarize plain text using Bedrock.
@@ -52,54 +61,93 @@ def summarize_text(
     Terraform stack, the default boto3 client uses the VPC endpoints and
     the task/instance role (no credentials needed).
     """
+    if pii_mode not in PII_MODES:
+        raise ValueError(f"pii_mode must be one of {PII_MODES!r}, got {pii_mode!r}")
+
     client = _get_client(region_name=region_name)
     model_id = model_id or DEFAULT_MODEL_ID
 
     if not text or not text.strip():
         return ""
 
-    if pii_mode == "block":
-        if contains_pii(text, region_name=region_name, language_code=pii_language_code):
-            raise PIIDetectedError(
-                "Document contains PII; summarization blocked. Use pii_mode='redact' to summarize with PII masked."
+    start = time.perf_counter()
+    try:
+        if pii_mode == PII_MODE_BLOCK:
+            if contains_pii(text, region_name=region_name, language_code=pii_language_code):
+                duration_ms = round((time.perf_counter() - start) * 1000)
+                audit_log.audit(
+                    "summarize_blocked",
+                    action="summarize_text",
+                    source_type=_audit_source_type,
+                    pii_mode=pii_mode,
+                    pii_blocked=True,
+                    duration_ms=duration_ms,
+                    status="blocked",
+                )
+                raise PIIDetectedError(
+                    "Document contains PII; summarization blocked. Use pii_mode='redact' to summarize with PII masked."
+                )
+        elif pii_mode == PII_MODE_REDACT:
+            text = redact_pii(
+                text,
+                region_name=region_name,
+                language_code=pii_language_code,
+                mask=pii_mask,
             )
-    elif pii_mode == "redact":
-        text = redact_pii(
-            text,
-            region_name=region_name,
-            language_code=pii_language_code,
-            mask=pii_mask,
+
+        response = client.converse(
+            modelId=model_id,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "text": (
+                                "Summarize the following document concisely. "
+                                "Preserve key facts and conclusions. "
+                                "Do not add commentary or meta text.\n\n"
+                                f"{text}"
+                            )
+                        }
+                    ],
+                }
+            ],
+            system=[{"text": "You are a document summarization assistant. Output only the summary, no preamble."}],
+            inferenceConfig={
+                "maxTokens": max_tokens,
+                "temperature": temperature,
+            },
         )
 
-    response = client.converse(
-        modelId=model_id,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "text": (
-                            "Summarize the following document concisely. "
-                            "Preserve key facts and conclusions. "
-                            "Do not add commentary or meta text.\n\n"
-                            f"{text}"
-                        )
-                    }
-                ],
-            }
-        ],
-        system=[{"text": "You are a document summarization assistant. Output only the summary, no preamble."}],
-        inferenceConfig={
-            "maxTokens": max_tokens,
-            "temperature": temperature,
-        },
-    )
-
-    # Converse response: output.message.content[].text
-    output = response.get("output", {})
-    message = output.get("message", {})
-    parts = message.get("content", [])
-    return "".join(block.get("text", "") for block in parts if block.get("text"))
+        # Converse response: output.message.content[].text
+        output = response.get("output", {})
+        message = output.get("message", {})
+        parts = message.get("content", [])
+        summary = "".join(block.get("text", "") for block in parts if block.get("text"))
+        duration_ms = round((time.perf_counter() - start) * 1000)
+        audit_log.audit(
+            "summarize_success",
+            action="summarize_text",
+            source_type=_audit_source_type,
+            pii_mode=pii_mode,
+            duration_ms=duration_ms,
+            status="success",
+        )
+        return summary
+    except PIIDetectedError:
+        raise
+    except Exception as e:
+        duration_ms = round((time.perf_counter() - start) * 1000)
+        audit_log.error_audit(
+            "summarize_error",
+            action="summarize_text",
+            source_type=_audit_source_type,
+            pii_mode=pii_mode,
+            duration_ms=duration_ms,
+            status="error",
+            error_type=type(e).__name__,
+        )
+        raise
 
 
 def summarize_document(
@@ -126,6 +174,10 @@ def summarize_document(
     When running with the Terraform IAM role in the VPC, Bedrock, S3, Textract,
     and Comprehend use VPC endpoints (no NAT needed for these calls).
     """
+    if pii_mode not in PII_MODES:
+        raise ValueError(f"pii_mode must be one of {PII_MODES!r}, got {pii_mode!r}")
+
+    source_type = "s3" if source.strip().lower().startswith("s3://") else "file"
     text = extract_text_for_summary(source, region_name=region_name)
 
     return summarize_text(
@@ -137,4 +189,5 @@ def summarize_document(
         pii_mode=pii_mode,
         pii_language_code=pii_language_code,
         pii_mask=pii_mask,
+        _audit_source_type=source_type,
     )
